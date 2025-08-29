@@ -20,12 +20,13 @@ class OrionFlutter {
   static Future<String?> initializeEdOrion({
     required String cid,
     required String pid,
-    String platform = "android",
+    String? platform, // ✅ Nullable to allow fallback
   }) async {
-    _platform = platform.toLowerCase();
+    // ✅ Fallback to auto-detect only if param is missing
+    _platform = (platform ?? (Platform.isAndroid ? "android" : "ios")).toLowerCase();
 
     if (!isAndroid) {
-      // Do not initialize on iOS or unknown platforms
+      // 🛑 Skip init on unsupported platforms
       return Future.value("Skipped Orion init (platform = $_platform)");
     }
 
