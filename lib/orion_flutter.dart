@@ -1,5 +1,6 @@
-import 'orion_flutter_platform_interface.dart';
+import 'dart:io';
 import 'package:flutter/services.dart';
+import 'orion_flutter_platform_interface.dart';
 
 class OrionFlutter {
   static const MethodChannel _channel = MethodChannel('orion_flutter');
@@ -9,7 +10,25 @@ class OrionFlutter {
   static String? _lastException;
   static DateTime? _lastErrorTime;
 
-  static Future<String?> initializeEdOrion({required String cid, required String pid}) async {
+  // Track platform: android or ios
+  static String _platform = Platform.isAndroid ? "android" : "ios";
+
+  /// Use this getter inside all Orion methods
+  static bool get isAndroid => _platform == "android";
+
+  /// Initializes Orion SDK (Flutter + native)
+  static Future<String?> initializeEdOrion({
+    required String cid,
+    required String pid,
+    String platform = "android",
+  }) async {
+    _platform = platform.toLowerCase();
+
+    if (!isAndroid) {
+      // Do not initialize on iOS or unknown platforms
+      return Future.value("Skipped Orion init (platform = $_platform)");
+    }
+
     return await _channel.invokeMethod<String>('initializeEdOrion', {
       'cid': cid,
       'pid': pid,
@@ -32,9 +51,8 @@ class OrionFlutter {
     String? screen,
     List<Map<String, dynamic>>? network,
   }) async {
-    if (_isReportingError) return;
+    if (!isAndroid || _isReportingError) return;
 
-    // Optional: Deduplication to prevent repeated logs
     if (_lastException == exception &&
         _lastErrorTime != null &&
         DateTime.now().difference(_lastErrorTime!) < const Duration(seconds: 10)) {
@@ -54,8 +72,8 @@ class OrionFlutter {
         'screen': screen ?? 'UnknownScreen',
         'network': network ?? [],
       });
-    } catch (e) {
-      // Optionally log locally or ignore
+    } catch (_) {
+      // Optionally log locally
     } finally {
       _isReportingError = false;
     }
@@ -63,7 +81,7 @@ class OrionFlutter {
 
   static void trackUnhandledError(Object error, StackTrace stack,
       {String? screen, List<Map<String, dynamic>>? network}) {
-    if (_isReportingError) return;
+    if (!isAndroid || _isReportingError) return;
 
     _isReportingError = true;
     try {
@@ -75,7 +93,7 @@ class OrionFlutter {
         'screen': screen ?? 'UnknownScreen',
         'network': network ?? [],
       });
-    } catch (e) {
+    } catch (_) {
       // ignore
     } finally {
       _isReportingError = false;
@@ -93,6 +111,8 @@ class OrionFlutter {
     String? contentType,
     String? errorMessage,
   }) async {
+    if (!isAndroid) return;
+
     await _channel.invokeMethod('trackNetworkRequest', {
       'method': method,
       'url': url,
@@ -114,6 +134,8 @@ class OrionFlutter {
     int frozenFrames = 0,
     List<Map<String, dynamic>> network = const [],
   }) async {
+    if (!isAndroid) return;
+
     await _channel.invokeMethod("trackFlutterScreen", {
       "screen": screen,
       "ttid": ttid,

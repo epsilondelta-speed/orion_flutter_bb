@@ -8,41 +8,48 @@
 ///
 /// - Will automatically track request/response/errors per screen.
 /// - Make sure OrionNetworkTracker.currentScreenName is always correct.
-/// - Used with OrionScreenTracker + OrionFlutterPlugin.
+/// - Used with OrionManualTracker + OrionFlutterPlugin.
+
 import 'dart:io';
 import 'package:dio/dio.dart';
-import 'package:flutter/foundation.dart';
 import 'package:orion_flutter/orion_network_tracker.dart';
 import 'package:orion_flutter/orion_logger.dart';
+import 'orion_flutter.dart';
 
 class OrionDioInterceptor extends Interceptor {
   @override
   void onRequest(RequestOptions options, RequestInterceptorHandler handler) {
+    if (!OrionFlutter.isAndroid) return handler.next(options);
+
     options.extra['startTime'] = DateTime.now().millisecondsSinceEpoch;
     super.onRequest(options, handler);
   }
 
   @override
   void onResponse(Response response, ResponseInterceptorHandler handler) {
-    _track(
-      response.requestOptions,
-      response.statusCode ?? -1,
-      payload: response.data,
-      contentType: response.headers[HttpHeaders.contentTypeHeader]?.first,
-    );
+    if (OrionFlutter.isAndroid) {
+      _track(
+        response.requestOptions,
+        response.statusCode ?? -1,
+        payload: response.data,
+        contentType: response.headers[HttpHeaders.contentTypeHeader]?.first,
+      );
+    }
     super.onResponse(response, handler);
   }
 
   @override
   void onError(DioError err, ErrorInterceptorHandler handler) {
-    final statusCode = err.response?.statusCode ?? -1;
-    orionPrint("🔴 OrionDioInterceptor - onError: [${err.requestOptions.method}] ${err.requestOptions.uri} | ${err.message}");
-    _track(
-      err.requestOptions,
-      statusCode,
-      error: err.message,
-      contentType: err.response?.headers[HttpHeaders.contentTypeHeader]?.first,
-    );
+    if (OrionFlutter.isAndroid) {
+      final statusCode = err.response?.statusCode ?? -1;
+      orionPrint("🔴 OrionDioInterceptor - onError: [${err.requestOptions.method}] ${err.requestOptions.uri} | ${err.message}");
+      _track(
+        err.requestOptions,
+        statusCode,
+        error: err.message,
+        contentType: err.response?.headers[HttpHeaders.contentTypeHeader]?.first,
+      );
+    }
     super.onError(err, handler);
   }
 
@@ -58,7 +65,6 @@ class OrionDioInterceptor extends Interceptor {
 
     final duration = endTime - startTime;
     final screen = OrionNetworkTracker.currentScreenName ?? "UnknownScreen";
-
     final payloadSize = _getPayloadSize(payload);
 
     OrionNetworkTracker.addRequest(screen, {

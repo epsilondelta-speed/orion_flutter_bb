@@ -7,31 +7,36 @@ import 'orion_logger.dart';
 class OrionScreenTracker extends RouteObserver<PageRoute<dynamic>> {
   final Map<String, _ScreenMetrics> _screenMetrics = {};
 
+  @override
   void didPush(Route route, Route? previousRoute) {
     super.didPush(route, previousRoute);
+    if (!OrionFlutter.isAndroid) return;
 
-    // ✅ Send previous screen metrics BEFORE starting new screen
     _finalizeTracking(previousRoute);
-
     _updateCurrentScreen(route);
     _startTracking(route);
-
   }
 
   @override
   void didReplace({Route? newRoute, Route? oldRoute}) {
     super.didReplace(newRoute: newRoute, oldRoute: oldRoute);
+    if (!OrionFlutter.isAndroid) return;
+
     _startTracking(newRoute);
   }
 
   @override
   void didPop(Route route, Route? previousRoute) {
     super.didPop(route, previousRoute);
+    if (!OrionFlutter.isAndroid) return;
+
     _updateCurrentScreen(previousRoute);
     _finalizeTracking(route);
   }
 
   void _updateCurrentScreen(Route? route) {
+    if (!OrionFlutter.isAndroid) return;
+
     if (route is PageRoute) {
       final screenName = route.settings.name ?? route.runtimeType.toString();
       OrionNetworkTracker.setCurrentScreen(screenName);
@@ -40,6 +45,8 @@ class OrionScreenTracker extends RouteObserver<PageRoute<dynamic>> {
   }
 
   void _startTracking(Route? route) {
+    if (!OrionFlutter.isAndroid) return;
+
     if (route is PageRoute) {
       final screenName = route.settings.name ?? route.runtimeType.toString();
       final metrics = _ScreenMetrics(screenName);
@@ -49,14 +56,14 @@ class OrionScreenTracker extends RouteObserver<PageRoute<dynamic>> {
   }
 
   void _finalizeTracking(Route? route) {
+    if (!OrionFlutter.isAndroid) return;
+
     if (route is PageRoute) {
       final screenName = route.settings.name ?? route.runtimeType.toString();
       final metrics = _screenMetrics.remove(screenName);
       metrics?.send();
     }
   }
-
-
 }
 
 class _ScreenMetrics {
@@ -68,15 +75,15 @@ class _ScreenMetrics {
   _ScreenMetrics(this.screenName);
 
   void begin() {
+    if (!OrionFlutter.isAndroid) return;
+
     _stopwatch.start();
 
-    // Capture TTID: first frame render complete
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _ttid = _stopwatch.elapsedMilliseconds;
       debugPrint("📏 [$screenName] TTID: $_ttid ms");
     });
 
-    // Capture TTFD, Janky, Frozen after layout stabilizes
     WidgetsBinding.instance.addPersistentFrameCallback((_) {
       if (_ttfdCaptured) return;
       _ttfdCaptured = true;
@@ -86,7 +93,6 @@ class _ScreenMetrics {
         final janky = _mockJankyFrames();
         final frozen = _mockFrozenFrames();
 
-        // Save for later if needed in send()
         _ttfdFinal = ttfd;
         _jankyFinal = janky;
         _frozenFinal = frozen;
@@ -99,6 +105,8 @@ class _ScreenMetrics {
   int _frozenFinal = 0;
 
   void send() {
+    if (!OrionFlutter.isAndroid) return;
+
     final networkData = OrionNetworkTracker.consumeRequestsForScreen(screenName);
 
     OrionFlutter.trackFlutterScreen(

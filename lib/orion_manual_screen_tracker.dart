@@ -9,6 +9,8 @@ class OrionManualTracker {
 
   /// 🔄 Start tracking a screen manually
   static void startTracking(String screenName) {
+    if (!OrionFlutter.isAndroid) return;
+
     orionPrint("🚀 [Orion] startTracking() called for: $screenName");
 
     if (_screenMetrics.containsKey(screenName)) {
@@ -16,17 +18,14 @@ class OrionManualTracker {
       return;
     }
 
-    // 📚 Push to screen history (prevent duplicate consecutive entries)
     if (_screenHistoryStack.isEmpty || _screenHistoryStack.last != screenName) {
       _screenHistoryStack.add(screenName);
       orionPrint("📚 [Orion] Pushed $screenName to screen history");
     }
 
-    // Set current screen context for network tracking
     OrionNetworkTracker.setCurrentScreen(screenName);
     orionPrint("📍 OrionManualTracker: currentScreenName set to $screenName");
 
-    // Start stopwatch and TTID/TTFD tracking
     final metrics = _ManualScreenMetrics(screenName);
     _screenMetrics[screenName] = metrics;
     metrics.begin();
@@ -36,11 +35,12 @@ class OrionManualTracker {
 
   /// ✅ Finalize tracking and send beacon
   static void finalizeScreen(String screenName) {
+    if (!OrionFlutter.isAndroid) return;
+
     orionPrint("📥 [Orion] finalizeScreen() called for: $screenName");
 
     final metrics = _screenMetrics.remove(screenName);
 
-    // 📚 Pop from screen history (only if it matches the top)
     if (_screenHistoryStack.isNotEmpty && _screenHistoryStack.last == screenName) {
       _screenHistoryStack.removeLast();
       orionPrint("📚 [Orion] Popped $screenName from screen history");
@@ -57,6 +57,8 @@ class OrionManualTracker {
 
   /// 🧠 Resume previous screen from stack (for back navigation)
   static void resumePreviousScreen() {
+    if (!OrionFlutter.isAndroid) return;
+
     if (_screenHistoryStack.length >= 1) {
       final previous = _screenHistoryStack.last;
       orionPrint("🔁 [Orion] Resumed tracking for previous screen: $previous");
@@ -68,6 +70,8 @@ class OrionManualTracker {
 
   /// 🔍 Peek the second-last screen name (without modifying stack)
   static String? getLastTrackedScreen() {
+    if (!OrionFlutter.isAndroid) return null;
+
     if (_screenHistoryStack.length >= 2) {
       return _screenHistoryStack[_screenHistoryStack.length - 2];
     } else {
@@ -77,6 +81,8 @@ class OrionManualTracker {
   }
 
   static bool hasTracked(String screenName) {
+    if (!OrionFlutter.isAndroid) return false;
+
     final exists = _screenMetrics.containsKey(screenName);
     orionPrint("🔍 [Orion] hasTracked($screenName): $exists");
     return exists;
@@ -93,13 +99,11 @@ class _ManualScreenMetrics {
 
   void begin() {
     _stopwatch.start();
-    // TTID: after first frame
+
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _ttid = _stopwatch.elapsedMilliseconds;
-
     });
 
-    // TTFD and frame data
     WidgetsBinding.instance.addPersistentFrameCallback((_) {
       if (_ttfdCaptured) return;
       _ttfdCaptured = true;
@@ -112,8 +116,6 @@ class _ManualScreenMetrics {
         _ttfdFinal = ttfd;
         _jankyFinal = janky;
         _frozenFinal = frozen;
-
-        debugPrint("📏 [$screenName] TTFD: $ttfd ms | Janky: $janky | Frozen: $frozen");
       });
     });
   }
@@ -123,6 +125,8 @@ class _ManualScreenMetrics {
   int _frozenFinal = 0;
 
   void send() {
+    if (!OrionFlutter.isAndroid) return;
+
     final networkData = OrionNetworkTracker.consumeRequestsForScreen(screenName);
 
     OrionFlutter.trackFlutterScreen(
