@@ -111,8 +111,8 @@ class _ManualScreenMetrics {
 
       Future.delayed(const Duration(milliseconds: 500), () {
         final ttfd = _stopwatch.elapsedMilliseconds;
-        final janky = _calculateJankyFrames();    // renamed
-        final frozen = _calculateFrozenFrames();  // renamed
+        final janky = _calculateJankyFrames();   
+        final frozen = _calculateFrozenFrames(); 
 
         _ttfdFinal = ttfd;
         _jankyFinal = janky;
