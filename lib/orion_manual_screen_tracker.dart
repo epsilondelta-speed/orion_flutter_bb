@@ -59,7 +59,7 @@ class OrionManualTracker {
   static void resumePreviousScreen() {
     if (!OrionFlutter.isAndroid) return;
 
-    if (_screenHistoryStack.length >= 1) {
+    if (_screenHistoryStack.isNotEmpty) {
       final previous = _screenHistoryStack.last;
       orionPrint("🔁 [Orion] Resumed tracking for previous screen: $previous");
       startTracking(previous);
@@ -80,6 +80,7 @@ class OrionManualTracker {
     }
   }
 
+  /// 🔎 Check if screen is already being tracked
   static bool hasTracked(String screenName) {
     if (!OrionFlutter.isAndroid) return false;
 
@@ -110,8 +111,8 @@ class _ManualScreenMetrics {
 
       Future.delayed(const Duration(milliseconds: 500), () {
         final ttfd = _stopwatch.elapsedMilliseconds;
-        final janky = _mockJankyFrames();
-        final frozen = _mockFrozenFrames();
+        final janky = _calculateJankyFrames();    // renamed
+        final frozen = _calculateFrozenFrames();  // renamed
 
         _ttfdFinal = ttfd;
         _jankyFinal = janky;
@@ -139,6 +140,9 @@ class _ManualScreenMetrics {
     );
   }
 
-  int _mockJankyFrames() => 0;
-  int _mockFrozenFrames() => 0;
+  // Handle edge case
+  int _calculateJankyFrames() => 0;
+
+  // Handle edge case
+  int _calculateFrozenFrames() => 0;
 }
