@@ -21,17 +21,43 @@ class OrionNetworkTracker {
 
   /// Add a request associated with a specific screen
   /// - Requests beyond [maxRequestsPerScreen] are ignored (not removed or replaced)
+  /// - URLs are capped: path kept, query string limited to 25 characters
   static void addRequest(String screen, Map<String, dynamic> request) {
     if (!OrionFlutter.isAndroid) return;
 
     final list = _screenRequests.putIfAbsent(screen, () => []);
 
     if (list.length >= maxRequestsPerScreen) {
-      orionPrint("⚠️ OrionNetworkTracker: max request limit ($maxRequestsPerScreen) reached for screen: $screen. Skipping.");
+      orionPrint(
+          "⚠️ OrionNetworkTracker: max request limit ($maxRequestsPerScreen) reached for screen: $screen. Skipping.");
       return;
     }
 
+    // 🧹 Cap long URLs (keep path, limit query string to 25 chars)
+    if (request.containsKey("url") && request["url"] is String) {
+      request["url"] = _capUrl(request["url"]);
+    }
+
     list.add(request);
+  }
+
+  /// Cap URLs by keeping path and truncating query string to max 25 chars
+  static String _capUrl(String fullUrl) {
+    try {
+      final uri = Uri.tryParse(fullUrl);
+      if (uri == null) return fullUrl;
+
+      final path = uri.path.isNotEmpty ? uri.path : fullUrl;
+      final query = uri.query;
+
+      if (query.isEmpty) return path;
+
+      final cappedQuery = query.length > 50 ? query.substring(0, 50) : query;
+      return '$path?$cappedQuery';
+    } catch (_) {
+      // Handle corner case
+      return fullUrl;
+    }
   }
 
   /// Add request to the currently active screen (if set)
