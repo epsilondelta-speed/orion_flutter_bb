@@ -6,7 +6,7 @@
 ///   ..interceptors.add(OrionDioInterceptor());
 /// ```
 ///
-/// - Will automatically track request/response/errors per screen.
+/// - Automatically tracks request/response/errors per screen.
 /// - Make sure OrionNetworkTracker.currentScreenName is always correct.
 /// - Used with OrionManualTracker + OrionFlutterPlugin.
 
@@ -28,13 +28,19 @@ class OrionDioInterceptor extends Interceptor {
   @override
   void onResponse(Response response, ResponseInterceptorHandler handler) {
     if (OrionFlutter.isAndroid) {
+      // Extract processingtime header (default to 0 if missing or invalid)
+      final processingTimeStr = response.headers['x-api-responsetime']?.first;
+      final processingTime = int.tryParse(processingTimeStr ?? '') ?? 0;
+
       _track(
         response.requestOptions,
         response.statusCode ?? -1,
         payload: response.data,
         contentType: response.headers[HttpHeaders.contentTypeHeader]?.first,
+        actualTime: processingTime,
       );
     }
+
     super.onResponse(response, handler);
   }
 
@@ -43,18 +49,27 @@ class OrionDioInterceptor extends Interceptor {
     if (OrionFlutter.isAndroid) {
       final statusCode = err.response?.statusCode ?? -1;
       orionPrint("🔴 OrionDioInterceptor - onError: [${err.requestOptions.method}] ${err.requestOptions.uri} | ${err.message}");
+
       _track(
         err.requestOptions,
         statusCode,
         error: err.message,
         contentType: err.response?.headers[HttpHeaders.contentTypeHeader]?.first,
+        actualTime: 0, // Default 0 for failed requests
       );
     }
+
     super.onError(err, handler);
   }
 
-  void _track(RequestOptions options, int statusCode,
-      {String? error, dynamic payload, String? contentType}) {
+  void _track(
+      RequestOptions options,
+      int statusCode, {
+        String? error,
+        dynamic payload,
+        String? contentType,
+        int actualTime = 0,
+      }) {
     final startTime = options.extra['startTime'] as int?;
     final endTime = DateTime.now().millisecondsSinceEpoch;
 
@@ -78,6 +93,7 @@ class OrionDioInterceptor extends Interceptor {
       "contentType": contentType,
       "responseType": options.responseType.toString(),
       "errorMessage": error,
+      "actualTime": actualTime,
     });
   }
 
