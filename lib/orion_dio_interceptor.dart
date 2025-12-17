@@ -29,7 +29,7 @@ class OrionDioInterceptor extends Interceptor {
   void onResponse(Response response, ResponseInterceptorHandler handler) {
     if (OrionFlutter.isAndroid) {
       // Extract processingtime header (default to 0 if missing or invalid)
-      final processingTimeStr = response.headers['x-api-responsetime']?.first;
+      final processingTimeStr = response.headers['x-response-time']?.first;
       final processingTime = int.tryParse(processingTimeStr ?? '') ?? 0;
 
       _track(
