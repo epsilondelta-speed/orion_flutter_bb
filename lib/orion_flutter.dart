@@ -20,13 +20,14 @@ class OrionFlutter {
   static Future<String?> initializeEdOrion({
     required String cid,
     required String pid,
-    String? platform, // ✅ Nullable to allow fallback
+    String platform = "android",
   }) async {
-    // ✅ Fallback to auto-detect only if param is missing
+
+    // If platform param is missing, auto-detect from Dart environment
     _platform = (platform ?? (Platform.isAndroid ? "android" : "ios")).toLowerCase();
 
     if (!isAndroid) {
-      // 🛑 Skip init on unsupported platforms
+      // Do not initialize on iOS or unknown platforms
       return Future.value("Skipped Orion init (platform = $_platform)");
     }
 
@@ -51,6 +52,7 @@ class OrionFlutter {
     String? context,
     String? screen,
     List<Map<String, dynamic>>? network,
+
   }) async {
     if (!isAndroid || _isReportingError) return;
 
@@ -72,6 +74,7 @@ class OrionFlutter {
         'context': context ?? '',
         'screen': screen ?? 'UnknownScreen',
         'network': network ?? [],
+
       });
     } catch (_) {
       // Optionally log locally
@@ -134,6 +137,7 @@ class OrionFlutter {
     int jankyFrames = 0,
     int frozenFrames = 0,
     List<Map<String, dynamic>> network = const [],
+    Map<String, dynamic>? frameMetrics,
   }) async {
     if (!isAndroid) return;
 
@@ -144,6 +148,7 @@ class OrionFlutter {
       "jankyFrames": jankyFrames,
       "frozenFrames": frozenFrames,
       "network": network,
+      'frameMetrics': frameMetrics,
     });
   }
 }
