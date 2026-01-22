@@ -41,24 +41,30 @@ class OrionNetworkTracker {
     list.add(request);
   }
 
-  /// Cap URLs by keeping path and truncating query string to max 25 chars
+  /// Cap URLs by keeping domain & path and truncating query string to max 50 chars
   static String _capUrl(String fullUrl) {
     try {
       final uri = Uri.tryParse(fullUrl);
       if (uri == null) return fullUrl;
 
-      final path = uri.path.isNotEmpty ? uri.path : fullUrl;
+      final base = uri.hasAuthority
+          ? '${uri.scheme}://${uri.host}${uri.path}'
+          : uri.path.isNotEmpty
+          ? uri.path
+          : fullUrl;
+
       final query = uri.query;
+      if (query.isEmpty) return base;
 
-      if (query.isEmpty) return path;
+      final cappedQuery =
+      query.length > 50 ? query.substring(0, 50) : query;
 
-      final cappedQuery = query.length > 50 ? query.substring(0, 50) : query;
-      return '$path?$cappedQuery';
+      return '$base?$cappedQuery';
     } catch (_) {
-      // Handle corner case
       return fullUrl;
     }
   }
+
 
   /// Add request to the currently active screen (if set)
   static void addRequestToCurrentScreen(Map<String, dynamic> request) {
