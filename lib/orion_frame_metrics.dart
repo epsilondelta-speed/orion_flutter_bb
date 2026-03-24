@@ -11,12 +11,15 @@ import 'orion_logger.dart';
 /// - Returns top 10 worst clusters
 /// - Frozen frames tracked separately
 /// - Ultra-compact beacon with shorthand names
+/// - ✅ NEW: Epoch timestamps for correlation with network waterfall
 ///
 /// Shorthand Key:
 /// - sfrm = startFrame
 /// - efrm = endFrame
 /// - st = startTime (ms from navigation start)
 /// - et = endTime (ms from navigation start)
+/// - stEp = startEpoch (absolute epoch ms)  ✅ NEW
+/// - etEp = endEpoch (absolute epoch ms)    ✅ NEW
 /// - avgDur = avgDuration
 /// - worstFrmDur = worstFrameDuration
 /// - jnkCls = jankClusters
@@ -118,6 +121,8 @@ class JankCluster {
   final int endFrame;            // efrm in beacon
   final int startTime;           // st in beacon (ms from nav start)
   final int endTime;             // et in beacon (ms from nav start)
+  final int startEpoch;          // stEp in beacon (absolute epoch ms) ✅ NEW
+  final int endEpoch;            // etEp in beacon (absolute epoch ms) ✅ NEW
   final double avgDuration;      // avgDur in beacon
   final double worstDuration;    // worstFrmDur in beacon
   final String buildPhase;       // phase in beacon
@@ -129,6 +134,8 @@ class JankCluster {
     required this.endFrame,
     required this.startTime,
     required this.endTime,
+    required this.startEpoch,    // ✅ NEW
+    required this.endEpoch,      // ✅ NEW
     required this.avgDuration,
     required this.worstDuration,
     required this.buildPhase,
@@ -140,6 +147,8 @@ class JankCluster {
   /// - jankyFrameCount = efrm - sfrm + 1
   /// - severity from avgDur and worstFrmDur
   /// - duration = et - st
+  ///
+  /// ✅ NEW: stEp/etEp for correlation with network waterfall
   Map<String, dynamic> toBeacon() {
     return {
       'id': id,
@@ -147,6 +156,8 @@ class JankCluster {
       'efrm': endFrame,                // endFrame
       'st': startTime,                 // startTime (ms from nav)
       'et': endTime,                   // endTime (ms from nav)
+      'stEp': startEpoch,              // ✅ NEW: startEpoch (absolute ms)
+      'etEp': endEpoch,                // ✅ NEW: endEpoch (absolute ms)
       'avgDur': avgDuration.toStringAsFixed(2),        // avgDuration
       'worstFrmDur': worstDuration.toStringAsFixed(2), // worstFrameDuration
       'phase': buildPhase,             // buildPhase
@@ -161,12 +172,14 @@ class JankCluster {
 class FrozenFrame {
   final int frameNumber;      // frm in beacon
   final int timestamp;        // ts in beacon (ms from nav start)
+  final int epoch;            // ep in beacon (absolute ms) ✅ NEW
   final double duration;      // dur in beacon
   final String buildPhase;    // phase in beacon
 
   FrozenFrame({
     required this.frameNumber,
     required this.timestamp,
+    required this.epoch,       // ✅ NEW
     required this.duration,
     required this.buildPhase,
   });
@@ -176,6 +189,7 @@ class FrozenFrame {
     return {
       'frm': frameNumber,                    // frameNumber
       'ts': timestamp,                       // timestamp (ms from nav)
+      'ep': epoch,                           // ✅ NEW: epoch (absolute ms)
       'dur': duration.toStringAsFixed(2),    // duration
       'phase': buildPhase,                   // buildPhase
     };
@@ -186,6 +200,7 @@ class FrozenFrame {
 class _FrameTimestamp {
   final int frameNumber;
   final int timestamp;        // ms from navigation start
+  final int epoch;            // ✅ NEW: absolute epoch ms
   final double duration;
   final bool isJanky;
   final bool isFrozen;
@@ -194,6 +209,7 @@ class _FrameTimestamp {
   _FrameTimestamp({
     required this.frameNumber,
     required this.timestamp,
+    required this.epoch,       // ✅ NEW
     required this.duration,
     required this.isJanky,
     required this.isFrozen,
@@ -214,6 +230,9 @@ class _FrameTracker {
   int? _lastFrameTime;
   bool _isTracking = false;
 
+  // ✅ NEW: Track navigation start epoch for absolute timestamps
+  late int _navigationStartEpoch;
+
   // Thresholds (in milliseconds)
   static const double _jankyThreshold = 16.67;  // >16.67ms = janky
   static const double _frozenThreshold = 700.0; // >700ms = frozen
@@ -223,6 +242,10 @@ class _FrameTracker {
   void start() {
     _isTracking = true;
     _lastFrameTime = null;
+
+    // ✅ NEW: Capture navigation start epoch
+    _navigationStartEpoch = DateTime.now().millisecondsSinceEpoch;
+
     _stopwatch.start();
 
     // Register frame callback
@@ -248,11 +271,12 @@ class _FrameTracker {
     if (_lastFrameTime != null) {
       final frameDuration = (currentTime - _lastFrameTime!).toDouble();
 
-      // ✅ FIX: Calculate frame START time (when frame began)
-      // Frame start = current stopwatch time - frame duration
-      // But ensure it's never negative
+      // Calculate frame START time (when frame began)
       final currentStopwatchTime = _stopwatch.elapsedMilliseconds;
       final frameTimestamp = (currentStopwatchTime - frameDuration.toInt()).clamp(0, currentStopwatchTime);
+
+      // ✅ NEW: Calculate absolute epoch for this frame
+      final frameEpoch = _navigationStartEpoch + frameTimestamp;
 
       final isJanky = frameDuration > _jankyThreshold;
       final isFrozen = frameDuration > _frozenThreshold;
@@ -262,6 +286,7 @@ class _FrameTracker {
       _allFrames.add(_FrameTimestamp(
         frameNumber: _allFrames.length + 1,
         timestamp: frameTimestamp,
+        epoch: frameEpoch,             // ✅ NEW
         duration: frameDuration,
         isJanky: isJanky,
         isFrozen: isFrozen,
@@ -273,6 +298,7 @@ class _FrameTracker {
         _frozenFrames.add(FrozenFrame(
           frameNumber: _allFrames.length,
           timestamp: frameTimestamp,
+          epoch: frameEpoch,           // ✅ NEW
           duration: frameDuration,
           buildPhase: buildPhase,
         ));
@@ -396,6 +422,10 @@ class _FrameTracker {
     final startTime = frames.first.timestamp;
     final endTime = frames.last.timestamp + frames.last.duration.toInt();
 
+    // ✅ NEW: Calculate epoch timestamps for cluster
+    final startEpoch = frames.first.epoch;
+    final endEpoch = frames.last.epoch + frames.last.duration.toInt();
+
     final avgDuration = frames.map((f) => f.duration).reduce((a, b) => a + b) / frames.length;
     final worstDuration = frames.map((f) => f.duration).reduce((a, b) => a > b ? a : b);
 
@@ -417,6 +447,8 @@ class _FrameTracker {
       endFrame: endFrame,
       startTime: startTime,
       endTime: endTime,
+      startEpoch: startEpoch,    // ✅ NEW
+      endEpoch: endEpoch,        // ✅ NEW
       avgDuration: avgDuration,
       worstDuration: worstDuration,
       buildPhase: buildPhase,

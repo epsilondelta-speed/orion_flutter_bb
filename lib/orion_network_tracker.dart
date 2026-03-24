@@ -15,7 +15,7 @@ class OrionNetworkTracker {
 
   /// Set the current screen name (e.g., in RouteObserver or manual tracker)
   static void setCurrentScreen(String screenName) {
-    if (!OrionFlutter.isAndroid) return;
+    if (!OrionFlutter.isSupported) return;
     currentScreenName = screenName;
   }
 
@@ -23,7 +23,7 @@ class OrionNetworkTracker {
   /// - Requests beyond [maxRequestsPerScreen] are ignored (not removed or replaced)
   /// - URLs are capped: path kept, query string limited to 25 characters
   static void addRequest(String screen, Map<String, dynamic> request) {
-    if (!OrionFlutter.isAndroid) return;
+    if (!OrionFlutter.isSupported) return;
 
     final list = _screenRequests.putIfAbsent(screen, () => []);
 
@@ -68,13 +68,13 @@ class OrionNetworkTracker {
 
   /// Add request to the currently active screen (if set)
   static void addRequestToCurrentScreen(Map<String, dynamic> request) {
-    if (!OrionFlutter.isAndroid || currentScreenName == null) return;
+    if (!OrionFlutter.isSupported || currentScreenName == null) return;
     addRequest(currentScreenName!, request);
   }
 
   /// Consume and return all requests for a screen (clears after return)
   static List<Map<String, dynamic>> consumeRequestsForScreen(String screen) {
-    if (!OrionFlutter.isAndroid) return [];
+    if (!OrionFlutter.isSupported) return [];
 
     final requests = _screenRequests.remove(screen);
     return requests ?? [];
@@ -82,25 +82,25 @@ class OrionNetworkTracker {
 
   /// Clear all stored requests (optional cleanup)
   static void clearAll() {
-    if (!OrionFlutter.isAndroid) return;
+    if (!OrionFlutter.isSupported) return;
     _screenRequests.clear();
   }
 
   /// Clear requests for a specific screen (optional)
   static void clearRequestsForScreen(String screen) {
-    if (!OrionFlutter.isAndroid) return;
+    if (!OrionFlutter.isSupported) return;
     _screenRequests.remove(screen);
   }
 
   /// Get current request count for a given screen (for debugging or diagnostics)
   static int getRequestCount(String screen) {
-    if (!OrionFlutter.isAndroid) return 0;
+    if (!OrionFlutter.isSupported) return 0;
     return _screenRequests[screen]?.length ?? 0;
   }
 
   /// Get all stored screens being tracked (useful for debugging)
   static List<String> getTrackedScreens() {
-    if (!OrionFlutter.isAndroid) return [];
+    if (!OrionFlutter.isSupported) return [];
     return _screenRequests.keys.toList();
   }
 }

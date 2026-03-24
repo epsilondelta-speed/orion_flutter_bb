@@ -39,7 +39,7 @@ class OrionDioInterceptor extends Interceptor {
 
   @override
   void onRequest(RequestOptions options, RequestInterceptorHandler handler) {
-    if (!OrionFlutter.isAndroid) {
+    if (!OrionFlutter.isSupported) {
       return handler.next(options);
     }
 
@@ -55,7 +55,7 @@ class OrionDioInterceptor extends Interceptor {
 
   @override
   void onResponse(Response response, ResponseInterceptorHandler handler) {
-    if (OrionFlutter.isAndroid) {
+    if (OrionFlutter.isSupported) {
       // Extract server processing time header (if available)
       final processingTimeStr = response.headers['x-response-time']?.first;
       final processingTime = int.tryParse(processingTimeStr ?? '') ?? 0;
@@ -78,7 +78,7 @@ class OrionDioInterceptor extends Interceptor {
 
   @override
   void onError(DioException err, ErrorInterceptorHandler handler) {
-    if (OrionFlutter.isAndroid) {
+    if (OrionFlutter.isSupported) {
       final statusCode = err.response?.statusCode ?? -1;
 
       orionPrint(

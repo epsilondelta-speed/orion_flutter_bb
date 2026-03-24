@@ -5,6 +5,7 @@ import 'orion_flutter.dart';
 import 'orion_network_tracker.dart';
 import 'orion_logger.dart';
 import 'orion_frame_metrics.dart';
+import 'orion_rage_click_tracker.dart';  // ✅ NEW: Import rage click tracker
 
 /// Manual screen tracker for non-MaterialApp navigation
 ///
@@ -16,6 +17,9 @@ import 'orion_frame_metrics.dart';
 /// - Frozen frames tracked separately
 /// - Screen history stack management
 /// - Manual TTFD support for async content
+/// - Battery lifecycle integration for accurate battery metrics
+/// - Background tracking per screen (wentBg, bgCount)
+/// - ✅ NEW: Rage click tracking per screen
 ///
 /// TTFD Logic:
 /// 1. If 3 stable frames (≤16ms) before user interaction → TTFD = stable frame time
@@ -42,7 +46,7 @@ class OrionManualTracker {
 
   /// 🔄 Start tracking a screen manually
   static void startTracking(String screenName) {
-    if (!OrionFlutter.isAndroid) return;
+    if (!OrionFlutter.isSupported) return;
 
     orionPrint("🚀 [Orion] startTracking() called for: $screenName");
 
@@ -62,6 +66,12 @@ class OrionManualTracker {
     OrionNetworkTracker.setCurrentScreen(screenName);
     orionPrint("📍 OrionManualTracker: currentScreenName set to $screenName");
 
+    // ✅ NEW: Set current screen for rage click tracker
+    OrionRageClickTracker.setCurrentScreen(screenName);
+
+    // Notify native side for battery tracking
+    OrionFlutter.onFlutterScreenStart(screenName);
+
     // Start tracking metrics
     final metrics = _ManualScreenMetrics(screenName);
     _screenMetrics[screenName] = metrics;
@@ -72,7 +82,7 @@ class OrionManualTracker {
 
   /// ✅ Finalize tracking and send beacon
   static void finalizeScreen(String screenName) {
-    if (!OrionFlutter.isAndroid) return;
+    if (!OrionFlutter.isSupported) return;
 
     orionPrint("🔥 [Orion] finalizeScreen() called for: $screenName");
 
@@ -87,6 +97,9 @@ class OrionManualTracker {
     // Clean up manual TTFD flag
     _manualTTFDFlags.remove(screenName);
 
+    // Notify native side for battery tracking BEFORE sending beacon
+    OrionFlutter.onFlutterScreenStop(screenName);
+
     if (metrics == null) {
       orionPrint("⚠️ [Orion] No tracking data found for: $screenName. Skipping send.");
       return;
@@ -98,7 +111,7 @@ class OrionManualTracker {
 
   /// 🧠 Resume previous screen from stack (for back navigation)
   static void resumePreviousScreen() {
-    if (!OrionFlutter.isAndroid) return;
+    if (!OrionFlutter.isSupported) return;
 
     if (_screenHistoryStack.length >= 1) {
       final previous = _screenHistoryStack.last;
@@ -111,7 +124,7 @@ class OrionManualTracker {
 
   /// 🔍 Peek the second-last screen name (without modifying stack)
   static String? getLastTrackedScreen() {
-    if (!OrionFlutter.isAndroid) return null;
+    if (!OrionFlutter.isSupported) return null;
 
     if (_screenHistoryStack.length >= 2) {
       return _screenHistoryStack[_screenHistoryStack.length - 2];
@@ -123,7 +136,7 @@ class OrionManualTracker {
 
   /// Check if screen is currently being tracked
   static bool hasTracked(String screenName) {
-    if (!OrionFlutter.isAndroid) return false;
+    if (!OrionFlutter.isSupported) return false;
 
     final exists = _screenMetrics.containsKey(screenName);
     orionPrint("🔍 [Orion] hasTracked($screenName): $exists");
@@ -132,7 +145,7 @@ class OrionManualTracker {
 
   /// Mark screen as fully drawn (for async content)
   static void markFullyDrawn(String screenName) {
-    if (!OrionFlutter.isAndroid) return;
+    if (!OrionFlutter.isSupported) return;
 
     _manualTTFDFlags[screenName] = true;
     orionPrint("🎯 [$screenName] Manual TTFD triggered");
@@ -154,6 +167,22 @@ class OrionManualTracker {
       _screenMetrics[screen]?.onUserInteraction();
     }
   }
+
+  /// Notify current screen that app went to background
+  static void onAppWentToBackground() {
+    final screen = currentScreen;
+    if (screen != null && _screenMetrics.containsKey(screen)) {
+      _screenMetrics[screen]?.onAppBackground();
+    }
+  }
+
+  /// Notify current screen that app came to foreground
+  static void onAppCameToForeground() {
+    final screen = currentScreen;
+    if (screen != null && _screenMetrics.containsKey(screen)) {
+      _screenMetrics[screen]?.onAppForeground();
+    }
+  }
 }
 
 /// Interaction detector widget - wrap your app with this
@@ -164,10 +193,10 @@ class OrionManualTracker {
 ///   child: MaterialApp(...),
 /// )
 /// ```
-class OrionInteractionDetector extends StatelessWidget {
+class OrionManualInteractionDetector extends StatelessWidget {
   final Widget child;
 
-  const OrionInteractionDetector({Key? key, required this.child}) : super(key: key);
+  const OrionManualInteractionDetector({Key? key, required this.child}) : super(key: key);
 
   @override
   Widget build(BuildContext context) {
@@ -177,6 +206,90 @@ class OrionInteractionDetector extends StatelessWidget {
       onPointerMove: (_) => OrionManualTracker.notifyInteraction(),
       child: child,
     );
+  }
+}
+
+/// App Lifecycle Observer for accurate battery tracking (Manual Tracker version)
+///
+/// Add this to your main.dart to track app foreground/background for battery:
+/// ```dart
+/// void main() {
+///   WidgetsFlutterBinding.ensureInitialized();
+///   OrionManualAppLifecycleObserver.initialize();
+///   runApp(MyApp());
+/// }
+/// ```
+class OrionManualAppLifecycleObserver with WidgetsBindingObserver {
+  static OrionManualAppLifecycleObserver? _instance;
+  static bool _isInForeground = true;
+
+  OrionManualAppLifecycleObserver._();
+
+  /// Initialize the app lifecycle observer
+  static void initialize() {
+    if (_instance == null) {
+      _instance = OrionManualAppLifecycleObserver._();
+      WidgetsBinding.instance.addObserver(_instance!);
+      orionPrint("🔋 OrionManualAppLifecycleObserver initialized");
+
+      // Notify foreground on startup (non-blocking)
+      _notifyForegroundAsync();
+    }
+  }
+
+  /// Non-blocking foreground notification
+  static void _notifyForegroundAsync() {
+    Future.microtask(() {
+      OrionFlutter.onAppForeground();
+      OrionManualTracker.onAppCameToForeground();
+    });
+  }
+
+  /// Non-blocking background notification
+  static void _notifyBackgroundAsync() {
+    Future.microtask(() {
+      OrionFlutter.onAppBackground();
+      OrionManualTracker.onAppWentToBackground();
+    });
+  }
+
+  /// Dispose the observer (call when app is terminating)
+  static void dispose() {
+    if (_instance != null) {
+      WidgetsBinding.instance.removeObserver(_instance!);
+      _instance = null;
+    }
+  }
+
+  /// Check if app is currently in foreground
+  static bool get isInForeground => _isInForeground;
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    switch (state) {
+      case AppLifecycleState.resumed:
+        if (!_isInForeground) {
+          _isInForeground = true;
+          orionPrint("🔋 App resumed (foreground)");
+          _notifyForegroundAsync();
+        }
+        break;
+      case AppLifecycleState.paused:
+      case AppLifecycleState.inactive:
+        if (_isInForeground) {
+          _isInForeground = false;
+          orionPrint("🔋 App paused (background)");
+          _notifyBackgroundAsync();
+        }
+        break;
+      case AppLifecycleState.detached:
+      case AppLifecycleState.hidden:
+        if (_isInForeground) {
+          _isInForeground = false;
+          _notifyBackgroundAsync();
+        }
+        break;
+    }
   }
 }
 
@@ -191,28 +304,36 @@ class _ManualScreenMetrics {
   bool _ttfdCaptured = false;
   bool _ttfdManual = false;
 
-  // ✅ Interaction tracking
+  // Interaction tracking
   bool _userInteracted = false;
   int _interactionTime = -1;
-  String _ttfdSource = 'unknown';  // 'stable_frames', 'interaction', 'manual', 'timeout'
+  String _ttfdSource = 'unknown';
+
+  // Background tracking for this screen
+  bool _wentToBackground = false;
+  int _backgroundCount = 0;
 
   // Frame stability tracking
   int _stableFrameCount = 0;
   static const int _requiredStableFrames = 3;
-  static const int _maxFrameDuration = 16;  // 16ms = 60fps
+  static const int _maxFrameDuration = 16;
   int? _lastFrameTime;
 
   // Timeout
-  static const int _ttfdTimeoutMs = 10000;  // 10 seconds
+  static const int _ttfdTimeoutMs = 5000;
 
   bool _disposed = false;
 
   _ManualScreenMetrics(this.screenName);
 
   void begin() {
-    if (!OrionFlutter.isAndroid) return;
+    if (!OrionFlutter.isSupported) return;
 
     _stopwatch.start();
+
+    // Reset background tracking for this screen
+    _wentToBackground = false;
+    _backgroundCount = 0;
 
     // Start TTID tracking
     _captureTTID();
@@ -224,6 +345,23 @@ class _ManualScreenMetrics {
     OrionFrameMetrics.startTracking(screenName);
   }
 
+  /// Called when app goes to background during this screen
+  void onAppBackground() {
+    if (_disposed) return;
+
+    _wentToBackground = true;
+    _backgroundCount++;
+
+    orionPrint("📱 [$screenName] App went to background (count: $_backgroundCount)");
+  }
+
+  /// Called when app comes to foreground during this screen
+  void onAppForeground() {
+    if (_disposed) return;
+
+    orionPrint("📱 [$screenName] App came to foreground");
+  }
+
   /// Called when user interacts with the screen
   void onUserInteraction() {
     if (_userInteracted || _ttfdCaptured || _disposed) return;
@@ -233,7 +371,6 @@ class _ManualScreenMetrics {
 
     orionPrint("👆 [$screenName] User interaction detected at $_interactionTime ms");
 
-    // ✅ If TTFD not captured yet, capture it now (interaction = content was visible)
     if (!_ttfdCaptured) {
       _ttfd = _interactionTime;
       _ttfdCaptured = true;
@@ -300,7 +437,6 @@ class _ManualScreenMetrics {
 
     final currentTime = timestamp.inMilliseconds;
 
-    // ✅ Check timeout
     if (_stopwatch.elapsedMilliseconds > _ttfdTimeoutMs) {
       _ttfd = _stopwatch.elapsedMilliseconds;
       _ttfdCaptured = true;
@@ -313,20 +449,17 @@ class _ManualScreenMetrics {
       final frameDuration = currentTime - _lastFrameTime!;
 
       if (frameDuration <= _maxFrameDuration) {
-        // Stable frame
         _stableFrameCount++;
 
         if (_stableFrameCount >= _requiredStableFrames) {
-          // ✅ 3 stable frames achieved BEFORE interaction
           _ttfd = _stopwatch.elapsedMilliseconds;
           _ttfdCaptured = true;
           _ttfdSource = 'stable_frames';
 
-          orionPrint("✅ [$screenName] TTFD (stable): $_ttfd ms (after $_requiredStableFrames stable frames)");
+          orionPrint("✅ [$screenName] TTFD (stable): $_ttfd ms");
           return;
         }
       } else {
-        // Janky frame - reset only if very janky (>32ms)
         if (frameDuration > 32) {
           _stableFrameCount = 0;
         }
@@ -335,20 +468,18 @@ class _ManualScreenMetrics {
 
     _lastFrameTime = currentTime;
 
-    // Continue tracking
     if (!_ttfdCaptured) {
       SchedulerBinding.instance.scheduleFrameCallback(_onFrame);
     }
   }
 
   void send() {
-    if (!OrionFlutter.isAndroid || _disposed) return;
+    if (!OrionFlutter.isSupported || _disposed) return;
 
     _disposed = true;
 
-    // Wait to ensure TTFD and frame metrics are captured
     Future.delayed(const Duration(milliseconds: 100), () {
-      if (!OrionFlutter.isAndroid) return;
+      if (!OrionFlutter.isSupported) return;
 
       if (!_ttfdCaptured) {
         _ttfd = _stopwatch.elapsedMilliseconds;
@@ -361,37 +492,55 @@ class _ManualScreenMetrics {
 
       final networkData = OrionNetworkTracker.consumeRequestsForScreen(screenName);
 
+      // ✅ NEW: Get rage clicks for this screen
+      final rageClicks = OrionRageClickTracker.getRageClicksJson(screenName);
+      final rageClickCount = OrionRageClickTracker.getRageClickCount(screenName);
+
+      // Clear rage clicks after getting data
+      OrionRageClickTracker.clearScreen(screenName);
+
+      final bgInfo = _wentToBackground ? ' (went bg: $_backgroundCount times)' : '';
+      final rageInfo = rageClickCount > 0 ? ' 🔴 Rage clicks: $rageClickCount' : '';
+
       orionPrint(
           "📤 [$screenName] Sending beacon:\n"
               "   TTID: $_ttid ms\n"
               "   TTFD: $_ttfd ms (source: $_ttfdSource)\n"
               "   User interacted: $_userInteracted${_userInteracted ? ' at ${_interactionTime}ms' : ''}\n"
+              "   Went to background: $_wentToBackground (count: $_backgroundCount)$bgInfo\n"
               "   Janky: ${frameMetrics.jankyFrames}/${frameMetrics.totalFrames} frames\n"
               "   Frozen: ${frameMetrics.frozenFrames} frames\n"
               "   Clusters: ${frameMetrics.top10Clusters.length}\n"
               "   Avg frame: ${frameMetrics.avgFrameDuration.toStringAsFixed(2)}ms\n"
               "   Worst frame: ${frameMetrics.worstFrameDuration.toStringAsFixed(2)}ms\n"
-              "   Network: ${networkData.length} requests"
+              "   Network: ${networkData.length} requests$rageInfo"
       );
 
       // Get ultra-compact beacon with shorthand names
       final frameBeacon = frameMetrics.toBeacon();
 
-      // ✅ Add TTFD source and interaction info to frame beacon
+      // Add TTFD source and interaction info to frame beacon
       frameBeacon['ttfdSrc'] = _ttfdSource;
       if (_userInteracted) {
-        frameBeacon['intTime'] = _interactionTime;  // interaction time
+        frameBeacon['intTime'] = _interactionTime;
       }
+
+      final bool ttfdManualFlag = _ttfdSource == 'manual';
 
       // Pass frame metrics as separate parameter
       OrionFlutter.trackFlutterScreen(
         screen: screenName,
         ttid: _ttid,
         ttfd: _ttfd,
+        ttfdManual: ttfdManualFlag,
         jankyFrames: frameMetrics.jankyFrames,
         frozenFrames: frameMetrics.frozenFrames,
         network: networkData,
         frameMetrics: frameBeacon,
+        wentBg: _wentToBackground,
+        bgCount: _backgroundCount,
+        rageClicks: rageClicks,           // ✅ NEW
+        rageClickCount: rageClickCount,   // ✅ NEW
       );
     });
   }
