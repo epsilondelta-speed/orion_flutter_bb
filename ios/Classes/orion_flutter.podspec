@@ -1,6 +1,6 @@
 Pod::Spec.new do |s|
   s.name             = 'orion_flutter'
-  s.version          = '1.0.23'
+  s.version          = '1.2.12'
   s.summary          = 'Orion Flutter SDK — Real User Monitoring for Flutter apps.'
   s.description      = <<-DESC
     Orion Flutter SDK tracks screen performance (TTID/TTFD), frame metrics,
